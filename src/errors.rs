@@ -21,6 +21,24 @@ pub enum AppError {
 
     #[error("SQLx error: {0}")]
     SqlxError(#[from] SqlxError),
+
+    #[error("Missing DATABASE_URL environment variable")]
+    MissingDatabaseUrl,
+
+    #[error("Database connection error: {0}")]
+    DatabaseConnectionError(sqlx::Error),
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::Io(err)
+    }
+}
+
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
+        AppError::DatabaseConnectionError(err)
+    }
 }
 
 impl ResponseError for AppError {
@@ -29,9 +47,11 @@ impl ResponseError for AppError {
             AppError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::EnvVarError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::SqlxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::MissingDatabaseUrl => StatusCode::BAD_REQUEST,
+            AppError::DatabaseConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

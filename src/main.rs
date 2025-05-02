@@ -7,15 +7,27 @@ use actix_web::{
     middleware, web, App, Either, Error, HttpResponse, HttpServer, Responder, ResponseError,
 };
 use log::info;
+use log::error;
 use sqlx::SqlitePool;
 mod errors;
 use errors::AppError;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+
+    dotenvy::dotenv().ok();
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    let pool = SqlitePool::connect(&env::var("DATABASE_URL").unwrap()).await;
+     let database_url = env::var("DATABASE_URL").map_err(|e| {
+        error!("FATAL: DATABASE_URL environment variable not set: {}", e);
+        AppError::MissingDatabaseUrl // Or a more specific error type
+    })?;
+
+    let pool = SqlitePool::connect(&database_url).await.map_err(|e| {
+        error!("FATAL: Failed to connect to database: {}", e);
+        e // Propagate the sqlx::Error;
+
+            })?;
 
     info!("Starting HTTP server on http://localhost:8080/");
 
