@@ -20,7 +20,7 @@ pub enum AppError {
     EnvVarError(#[from] VarError),
 
     #[error("SQLx error: {0}")]
-    SqlxError(#[from] SqlxError),
+    SqlxError(SqlxError),
 
     #[error("Missing DATABASE_URL environment variable")]
     MissingDatabaseUrl,
@@ -29,11 +29,6 @@ pub enum AppError {
     DatabaseConnectionError(sqlx::Error),
 }
 
-impl From<std::io::Error> for AppError {
-    fn from(err: std::io::Error) -> Self {
-        AppError::Io(err)
-    }
-}
 
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {

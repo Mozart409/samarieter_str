@@ -1,33 +1,46 @@
-use std::env;
+use std::{env, str::FromStr};
 
 use actix_files::{Files, NamedFile};
 use actix_web::{
     get,
     http::{Method, StatusCode},
-    middleware, web, App, Either, Error, HttpResponse, HttpServer, Responder, ResponseError,
+    middleware, web,
+    web::Data,
+    App, Either, HttpResponse, HttpServer, Responder,
 };
-use log::info;
 use log::error;
-use sqlx::SqlitePool;
+use log::info;
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+    SqlitePool,
+};
 mod errors;
 use errors::AppError;
 
+struct AppState {
+    db_pool: SqlitePool,
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-
     dotenvy::dotenv().ok();
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-     let database_url = env::var("DATABASE_URL").map_err(|e| {
+    let database_url = env::var("DATABASE_URL").map_err(|e| {
         error!("FATAL: DATABASE_URL environment variable not set: {}", e);
-        AppError::MissingDatabaseUrl // Or a more specific error type
+        AppError::MissingDatabaseUrl
     })?;
 
-    let pool = SqlitePool::connect(&database_url).await.map_err(|e| {
-        error!("FATAL: Failed to connect to database: {}", e);
-        e // Propagate the sqlx::Error;
+    let opts = SqliteConnectOptions::from_str(&database_url)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .read_only(false)
+        .busy_timeout(std::time::Duration::from_secs(5));
 
-            })?;
+    let db_pool = SqlitePool::connect_with(opts)
+        .await
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     info!("Starting HTTP server on http://localhost:8080/");
 
@@ -40,6 +53,10 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/static", "static").show_files_listing())
             .service(favicon_handler)
             .service(index_handler)
+            .app_data(Data::new(AppState {
+                db_pool: db_pool.clone(),
+            }))
+            //
             .default_service(web::to(default_handler))
     })
     .bind(("0.0.0.0", 8080))?
