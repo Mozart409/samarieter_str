@@ -1,6 +1,6 @@
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
-use sqlx::Error as SqlxError;
-use std::env::VarError;
+use sqlx::{migrate::MigrateError, Error as SqlxError};
+use std::{env::VarError, io};
 use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -14,7 +14,7 @@ pub enum AppError {
     InternalServerError,
 
     #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(#[from] io::Error),
 
     #[error("Environment variable error: {0}")]
     EnvVarError(#[from] VarError),
@@ -27,14 +27,21 @@ pub enum AppError {
 
     #[error("Database connection error: {0}")]
     DatabaseConnectionError(sqlx::Error),
-}
 
+    #[error("Migration error: {0}")]
+    MigrateError(MigrateError),
+}
 
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         AppError::DatabaseConnectionError(err)
     }
 }
+// impl From<MigrateError> for AppError {
+//     fn from(err: MigrateError) -> Self {
+//         AppError::MigrateError(err)
+//     }
+// }
 
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
@@ -47,6 +54,7 @@ impl ResponseError for AppError {
             AppError::MissingDatabaseUrl => StatusCode::BAD_REQUEST,
             AppError::DatabaseConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::MigrateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -55,8 +63,8 @@ impl ResponseError for AppError {
     }
 }
 
-impl From<AppError> for std::io::Error {
+impl From<AppError> for io::Error {
     fn from(err: AppError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::Other, err.to_string())
+        io::Error::new(io::ErrorKind::Other, err.to_string())
     }
 }

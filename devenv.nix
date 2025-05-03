@@ -13,6 +13,7 @@
     pkgs.git
     pkgs.openssl
     pkgs.sqlx-cli
+    pkgs.sqlite
   ];
 
   dotenv.enable = true;

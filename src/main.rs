@@ -26,10 +26,13 @@ async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    let database_url = env::var("DATABASE_URL").map_err(|e| {
-        error!("FATAL: DATABASE_URL environment variable not set: {}", e);
-        AppError::MissingDatabaseUrl
-    })?;
+    // let database_url = env::var("DATABASE_URL").map_err(|e| {
+    //     error!("FATAL: DATABASE_URL environment variable not set: {}", e);
+    //     AppError::MissingDatabaseUrl
+    // })?;
+    //
+
+    let database_url = format!("sqlite://samarieter_str.db");
 
     let opts = SqliteConnectOptions::from_str(&database_url)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
@@ -41,6 +44,10 @@ async fn main() -> std::io::Result<()> {
     let db_pool = SqlitePool::connect_with(opts)
         .await
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    sqlx::migrate!().run(&db_pool).await.expect("Migrate Error");
+
+    info!("Database migrated successfully");
 
     info!("Starting HTTP server on http://localhost:8080/");
 
