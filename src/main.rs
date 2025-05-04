@@ -107,9 +107,7 @@ async fn register_form_handler(web::Form(form): web::Form<Register>) -> HttpResp
 
 /// Register handler
 #[get("/register")]
-async fn register_handler(
-    web::Form(form): web::Form<Register>,
-) -> Result<impl Responder, AppError> {
+async fn register_handler() -> Result<impl Responder, AppError> {
     Ok(NamedFile::open("static/register.html")?)
 }
 /// favicon handler
