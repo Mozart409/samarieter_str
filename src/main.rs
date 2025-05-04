@@ -4,14 +4,14 @@ use actix_files::{Files, NamedFile};
 use actix_web::{
     get,
     http::{Method, StatusCode},
-    middleware, web,
-    web::Data,
+    middleware, post,
+    web::{self, Data},
     App, Either, HttpResponse, HttpServer, Responder,
 };
-use log::error;
 use log::info;
+use serde::Deserialize;
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+    sqlite::{SqliteConnectOptions, SqliteJournalMode},
     SqlitePool,
 };
 mod errors;
@@ -60,6 +60,9 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/static", "static").show_files_listing())
             .service(favicon_handler)
             .service(index_handler)
+            .service(register_handler)
+            .service(register_form_handler)
+            .service(login_handler)
             .app_data(Data::new(AppState {
                 db_pool: db_pool.clone(),
             }))
@@ -76,6 +79,39 @@ async fn index_handler() -> Result<impl Responder, AppError> {
     Ok(NamedFile::open("static/index.html")?)
 }
 
+#[derive(Deserialize)]
+struct Login {
+    email: String,
+    password: String,
+}
+
+/// Login handler
+#[get("/login")]
+async fn login_handler(web::Form(form): web::Form<Login>) -> Result<impl Responder, AppError> {
+    Ok(NamedFile::open("static/login.html")?)
+}
+#[derive(Deserialize)]
+struct Register {
+    email: String,
+    password: String,
+    password2: String,
+}
+/// Register Form handler
+#[post("/register_form")]
+async fn register_form_handler(web::Form(form): web::Form<Register>) -> HttpResponse {
+    HttpResponse::Ok().body(format!(
+        "Email {}, Password {}, Password2 {}",
+        form.email, form.password, form.password2
+    ))
+}
+
+/// Register handler
+#[get("/register")]
+async fn register_handler(
+    web::Form(form): web::Form<Register>,
+) -> Result<impl Responder, AppError> {
+    Ok(NamedFile::open("static/register.html")?)
+}
 /// favicon handler
 #[get("/favicon")]
 async fn favicon_handler() -> Result<impl Responder, AppError> {
