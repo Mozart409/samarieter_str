@@ -77,3 +77,10 @@ Contributions are welcome! If you’d like to contribute:
 
 ## License
 This project is licensed under MIT. See the `LICENSE` file for details.
+
+
+## Generate Password
+
+```bash
+pwgen -Bcny 32 1
+```
