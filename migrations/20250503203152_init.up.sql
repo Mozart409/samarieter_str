@@ -1,15 +1,17 @@
 -- Add up migration script here
 CREATE TABLE IF NOT EXISTS tenants (
-	id int PRIMARY KEY,
+	id integer PRIMARY KEY AUTOINCREMENT,
 	name text NOT NULL,
+	public_id text NOT NULL UNIQUE,
 	created_at text NOT NULL,
 	updated_at text NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS users (
-	id int PRIMARY KEY,
+	id integer PRIMARY KEY AUTOINCREMENT,
 	email text NOT NULL UNIQUE,
 	pwd_hash text NOT NULL,
+	public_id text NOT NULL UNIQUE,
 	created_at text NOT NULL,
 	updated_at text NOT NULL,
 	tenant_id int NOT NULL,

@@ -5,7 +5,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("Database error: {0}")]
-    DatabaseError(String),
+    DatabaseError(SqlxError),
 
     #[error("Not found")]
     NotFound,
@@ -32,17 +32,6 @@ pub enum AppError {
     MigrateError(MigrateError),
 }
 
-impl From<sqlx::Error> for AppError {
-    fn from(err: sqlx::Error) -> Self {
-        AppError::DatabaseConnectionError(err)
-    }
-}
-// impl From<MigrateError> for AppError {
-//     fn from(err: MigrateError) -> Self {
-//         AppError::MigrateError(err)
-//     }
-// }
-
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -66,5 +55,11 @@ impl ResponseError for AppError {
 impl From<AppError> for io::Error {
     fn from(err: AppError) -> Self {
         io::Error::new(io::ErrorKind::Other, err.to_string())
+    }
+}
+
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
+        AppError::DatabaseError(err)
     }
 }
