@@ -98,7 +98,66 @@ struct Register {
 }
 /// Register Form handler
 #[post("/register_form")]
-async fn register_form_handler(web::Form(form): web::Form<Register>) -> HttpResponse {
+async fn register_form_handler(
+    web::Form(form): web::Form<Register>,
+    state: AppState,
+) -> HttpResponse {
+    // validate the form data, valid email and repeated password and password2
+    if form.email.is_empty() || form.password.is_empty() || form.password2.is_empty() {
+        return HttpResponse::BadRequest().body("All fields are required");
+    }
+    if form.password != form.password2 {
+        return HttpResponse::BadRequest().body("Passwords do not match");
+    }
+    if !form.email.contains('@') {
+        return HttpResponse::BadRequest().body("Invalid email address");
+    }
+    if form.password.len() < 12 {
+        return HttpResponse::BadRequest().body("Password must be at least 12 characters long");
+    }
+    if form.password.len() > 128 {
+        return HttpResponse::BadRequest().body("Password must be at most 128 characters long");
+    }
+    // check if password is strong numbers, letters, special characters
+    if !form.password.chars().any(|c| c.is_digit(10))
+        || !form.password.chars().any(|c| c.is_alphabetic())
+        || !form
+            .password
+            .chars()
+            .any(|c| "!@#$%^&*()_+-=[]{}|;':\",.<>?/".contains(c))
+    {
+        return HttpResponse::BadRequest().body(
+            "Password must contain at least one number, one letter and one special character",
+        );
+    }
+    // check if email is already registered
+    let mut conn = state
+        .db_pool
+        .acquire()
+        .await
+        .expect("Failed to acquire database connection");
+
+    let unused_email = sqlx::query!(
+        "SELECT email FROM users WHERE email = ? LIMIT 1",
+        form.email
+    )
+    .fetch_one(&mut conn)
+    .await
+    .expect("Failed to check email")
+    .is_none();
+    if !unused_email {
+        return HttpResponse::BadRequest().body("Email already registered");
+    }
+    // insert the user into the database
+    sqlx::query!(
+        "INSERT INTO users (email, pwd_hash) VALUES (?, ?)",
+        form.email,
+        form.password
+    )
+    .execute(&mut conn)
+    .await
+    .expect("Failed to insert user");
+
     HttpResponse::Ok().body(format!(
         "Email {}, Password {}, Password2 {}",
         form.email, form.password, form.password2
