@@ -5,7 +5,7 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta http-equiv="X-UA-Compatible" content="ie=edge">
-	<title>Register</title>
+	<title>Login</title>
 	<link rel="stylesheet" href="static/normalize.css">
 	<link rel="stylesheet" href="static/sakura.css" media="screen">
 	<link rel="stylesheet" href="static/sakura-dark.css" media="screen and (prefers-color-scheme: dark)">
@@ -14,25 +14,19 @@
 
 <body>
 	<main>
-		<h1>Register</h1>
+		<h1>Login</h1>
 		<a href="/">Home</a>
-		<a href="/login">Login</a>
+		<a href="/register">Register</a>
 		<div>
-			<form action="/register_form" method="POST">
+			<form action="/login_form" method="POST">
 				<label>Email <br />
 					<input type="text" id="email" name="email" required />
 				</label>
 				<label>Password (at least 12 characters long)<br />
 					<input type="password" id="password" name="password" required />
 				</label>
-				<label>Repeat password<br />
-					<input type="password" id="password2" name="password2" required />
-				</label>
-				<label>Tenant<br />
-					<input type="text" id="tenant" name="tenant" required  />
-				</label>
 				<p id="errors" style="color: red; font-style:italic;"></p>
-				<button type="submit">Register</button>
+				<button type="submit">Login</button>
 			</form>
 		</div>
 	</main>
@@ -40,7 +34,6 @@
 	 <script>
 		// check if password and password 2 are the same
 		const password = document.getElementById('password');
-		const password2 = document.getElementById('password2');
 		const errors = document.getElementById('errors');
 		const email = document.getElementById('email');
 		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
