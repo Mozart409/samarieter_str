@@ -125,11 +125,10 @@ async fn login_form_handler(
     let lc_email = form.email.to_lowercase();
 
     // check if email is already registered
-    let mut conn = state
-        .db_pool
-        .acquire()
-        .await
-        .expect("Failed to acquire database connection");
+    let mut conn = state.db_pool.acquire().await.map_err(|e| {
+        log::error!("Failed to acquire database connection: {}", e);
+        AppError::DatabaseConnectionError(e)
+    })?;
 
     let user = sqlx::query_as!(
         User,
@@ -211,16 +210,18 @@ async fn register_form_handler(
     let lc_tenant = form.tenant.to_lowercase();
 
     // check if email is already registered
-    let mut conn = state
-        .db_pool
-        .acquire()
-        .await
-        .expect("Failed to acquire database connection");
+    let mut conn = state.db_pool.acquire().await.map_err(|e| {
+        log::error!("Failed to acquire database connection: {}", e);
+        AppError::DatabaseConnectionError(e)
+    })?;
 
     let tenant_exists = sqlx::query!("SELECT name FROM tenants WHERE name = ? LIMIT 1", lc_tenant)
         .fetch_optional(&mut *conn)
         .await
-        .expect("Failed to check tenant")
+        .map_err(|e| {
+            log::error!("Failed to check tenant: {}", e);
+            AppError::SqlxError(e)
+        })?
         .is_none();
     if !tenant_exists {
         return Ok(HttpResponse::BadRequest().body("Tenant already registered"));
@@ -236,7 +237,10 @@ async fn register_form_handler(
         })?
         .count
         .try_into()
-        .unwrap();
+        .map_err(|e| {
+            log::error!("Failed to convert tenant count: {}", e);
+            AppError::InternalServerError
+        })?;
 
     // encode the tenant count to a sqids
     let sqids = Sqids::default();
@@ -261,7 +265,10 @@ async fn register_form_handler(
     let unused_email = sqlx::query!("SELECT email FROM users WHERE email = ? LIMIT 1", lc_email)
         .fetch_optional(&mut *conn)
         .await
-        .expect("Failed to check email")
+        .map_err(|e| {
+            log::error!("Failed to check email: {}", e);
+            AppError::SqlxError(e)
+        })?
         .is_none();
     if !unused_email {
         return Ok(HttpResponse::BadRequest().body("Email already registered"));
@@ -278,7 +285,7 @@ async fn register_form_handler(
         .hash_password(form.password.as_bytes(), &salt)
         .map_err(|e| {
             log::error!("Password hashing failed: {}", e);
-            AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string()))
+            AppError::PasswordError(e.to_string())
         })?
         .to_string();
     // check if the password is hashed correctly
@@ -301,7 +308,11 @@ async fn register_form_handler(
         })?
         .count
         .try_into()
-        .unwrap();
+        .map_err(|e| {
+            log::error!("Failed to convert user count to u64: {}", e);
+            AppError::InternalServerError
+        })?;
+
     let public_user_id = sqids
         .encode(&[user_count])
         .map_err(|e| AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string())))?;
