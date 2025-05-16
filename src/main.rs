@@ -14,8 +14,9 @@ use actix_web::{
     App, Either, HttpResponse, HttpServer, Responder,
 };
 use log::info;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{
+    prelude::FromRow,
     sqlite::{SqliteConnectOptions, SqliteJournalMode},
     SqlitePool,
 };
@@ -68,6 +69,7 @@ async fn main() -> std::io::Result<()> {
             .service(register_handler)
             .service(register_form_handler)
             .service(login_handler)
+            .service(login_form_handler)
             .app_data(Data::new(AppState {
                 db_pool: db_pool.clone(),
             }))
@@ -90,11 +92,75 @@ struct Login {
     password: String,
 }
 
-/// Login handler
-#[get("/login")]
-async fn login_handler(web::Form(form): web::Form<Login>) -> Result<impl Responder, AppError> {
-    Ok(NamedFile::open("static/login.html")?)
+#[derive(Deserialize, Serialize, Debug, Clone, FromRow)]
+struct User {
+    id: Option<i64>,
+    tenant_id: Option<i64>,
+    public_id: String,
+    created_at: String,
+    updated_at: String,
+    email: String,
+    pwd_hash: String,
 }
+
+#[post("/login_form")]
+async fn login_form_handler(
+    web::Form(form): web::Form<Login>,
+    state: Data<AppState>,
+) -> Result<impl Responder, AppError> {
+    // validate the form data, valid email and password
+    if form.email.is_empty() || form.password.is_empty() {
+        return Ok(HttpResponse::BadRequest().body("All fields are required"));
+    }
+    if !form.email.contains('@') {
+        return Ok(HttpResponse::BadRequest().body("Invalid email address"));
+    }
+    if form.password.len() < 12 {
+        return Ok(HttpResponse::BadRequest().body("Password must be at least 12 characters long"));
+    }
+    if form.password.len() > 128 {
+        return Ok(HttpResponse::BadRequest().body("Password must be at most 128 characters long"));
+    }
+    // lowercase form.email
+    let lc_email = form.email.to_lowercase();
+
+    // check if email is already registered
+    let mut conn = state
+        .db_pool
+        .acquire()
+        .await
+        .expect("Failed to acquire database connection");
+
+    let user = sqlx::query_as!(
+        User,
+        "SELECT id, tenant_id, public_id, created_at, updated_at, email, pwd_hash FROM users WHERE email = ? LIMIT 1",
+        lc_email
+    )
+    .fetch_optional(&mut *conn)
+    .await
+    .unwrap();
+
+    let user = user.unwrap();
+
+    // Compare the form.password with the hashed password in the database
+    let parsed_hash = PasswordHash::new(&user.pwd_hash).map_err(|e| {
+        log::error!("Password hash parsing failed: {}", e);
+        AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string()))
+    })?;
+    let argon2 = Argon2::default();
+    if argon2
+        .verify_password(form.password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
+        return Ok(HttpResponse::BadRequest().body("Invalid password"));
+    }
+
+    // If login is successful, redirect or respond accordingly
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", "/"))
+        .body("Login successful"))
+}
+
 #[derive(Deserialize)]
 struct Register {
     email: String,
@@ -270,6 +336,12 @@ async fn register_form_handler(
 #[get("/register")]
 async fn register_handler() -> Result<impl Responder, AppError> {
     Ok(NamedFile::open("static/register.html")?)
+}
+
+/// Register handler
+#[get("/login")]
+async fn login_handler() -> Result<impl Responder, AppError> {
+    Ok(NamedFile::open("static/login.html")?)
 }
 /// favicon handler
 #[get("/favicon")]

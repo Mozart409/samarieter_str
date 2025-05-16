@@ -30,6 +30,12 @@ pub enum AppError {
 
     #[error("Migration error: {0}")]
     MigrateError(MigrateError),
+
+    #[error("Unknown error")]
+    UnknownError,
+
+    #[error("Password error: {0}")]
+    PasswordError(String),
 }
 
 impl ResponseError for AppError {
@@ -44,6 +50,8 @@ impl ResponseError for AppError {
             AppError::DatabaseConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::MigrateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::UnknownError => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::PasswordError(_) => StatusCode::BAD_REQUEST,
         }
     }
 
