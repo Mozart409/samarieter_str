@@ -36,6 +36,9 @@ pub enum AppError {
 
     #[error("Password error: {0}")]
     PasswordError(String),
+
+    #[error("Tera template error: {0}")]
+    TemplateError(#[from] tera::Error),
 }
 
 impl ResponseError for AppError {
@@ -52,6 +55,7 @@ impl ResponseError for AppError {
             AppError::MigrateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::UnknownError => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::PasswordError(_) => StatusCode::BAD_REQUEST,
+            AppError::TemplateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

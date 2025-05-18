@@ -1,9 +1,12 @@
+#[macro_use]
+extern crate lazy_static;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
 use sqids::Sqids;
-use std::{env, str::FromStr};
+use std::str::FromStr;
+use tera::Tera;
 
 use actix_files::{Files, NamedFile};
 use actix_web::{
@@ -20,11 +23,29 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode},
     SqlitePool,
 };
+mod db;
 mod errors;
 use errors::AppError;
+use tera::Context;
 
+#[derive(Debug, Clone)]
 struct AppState {
     db_pool: SqlitePool,
+}
+
+lazy_static! {
+    pub static ref TEMPLATES: Tera = {
+        let mut tera = match Tera::new("templates/**/*") {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("Parsing error(s): {}", e);
+                ::std::process::exit(1);
+            }
+        };
+        tera.autoescape_on(vec![".html", ".sql"]);
+      //  tera.register_filter("do_nothing", do_nothing_filter);
+        tera
+    };
 }
 
 #[actix_web::main]
@@ -33,7 +54,7 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     // let database_url = env::var("DATABASE_URL").map_err(|e| {
-    //     error!("FATAL: DATABASE_URL environment variable not set: {}", e);
+    //     log::error!("FATAL: DATABASE_URL environment variable not set: {}", e);
     //     AppError::MissingDatabaseUrl
     // })?;
     //
@@ -82,8 +103,32 @@ async fn main() -> std::io::Result<()> {
 }
 /// index handler
 #[get("/")]
-async fn index_handler() -> Result<impl Responder, AppError> {
-    Ok(NamedFile::open("static/index.html")?)
+async fn index_handler(state: web::Data<AppState>) -> Result<impl Responder, AppError> {
+    let users = db::get_all_users(&state).await.map_err(|e| {
+        log::error!("Failed to get users: {}", e);
+        AppError::DatabaseError(e)
+    })?;
+
+    let tenants = db::get_all_tenants(&state).await.map_err(|e| {
+        log::error!("Failed to get tenants: {}", e);
+        AppError::DatabaseError(e)
+    })?;
+
+    let mut context = Context::new();
+    context.insert("title", "Welcome to the index page");
+    context.insert("description", "This is the index page");
+    context.insert("users", &users);
+    context.insert("tenants", &tenants);
+    context.insert("version", env!("CARGO_PKG_VERSION"));
+
+    let rendered = TEMPLATES.render("home.html", &context).map_err(|e| {
+        log::error!("Failed to render template: {}", e);
+        AppError::TemplateError(e)
+    })?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(rendered))
 }
 
 #[derive(Deserialize)]
@@ -101,6 +146,15 @@ struct User {
     updated_at: String,
     email: String,
     pwd_hash: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, FromRow)]
+struct Tenants {
+    id: i64,
+    name: String,
+    public_id: String,
+    created_at: String,
+    updated_at: String,
 }
 
 #[post("/login_form")]
@@ -346,13 +400,35 @@ async fn register_form_handler(
 /// Register handler
 #[get("/register")]
 async fn register_handler() -> Result<impl Responder, AppError> {
-    Ok(NamedFile::open("static/register.html")?)
+    let mut context = Context::new();
+    context.insert("title", "Register");
+    context.insert("description", "This is the register page");
+
+    let rendered = TEMPLATES.render("register.html", &context).map_err(|e| {
+        log::error!("Failed to render template: {}", e);
+        AppError::TemplateError(e)
+    })?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(rendered))
 }
 
 /// Register handler
 #[get("/login")]
 async fn login_handler() -> Result<impl Responder, AppError> {
-    Ok(NamedFile::open("static/login.html")?)
+    let mut context = Context::new();
+    context.insert("title", "Welcome to the login page");
+    context.insert("description", "This is the login page");
+
+    let rendered = TEMPLATES.render("login.html", &context).map_err(|e| {
+        log::error!("Failed to render template: {}", e);
+        AppError::TemplateError(e)
+    })?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(rendered))
 }
 /// favicon handler
 #[get("/favicon")]
