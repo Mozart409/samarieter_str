@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 actix-files = "0.6.6"
+actix-identity = "0.8.0"
+actix-session = { version = "0.10.1", features = ["cookie-session"] }
+actix-utils = "3.0.1"
 actix-web = "4.10.2"
 argon2 = { version = "0.5.3", features = ["std"] }
 dotenvy = "0.15.7"

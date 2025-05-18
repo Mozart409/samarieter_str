@@ -1,20 +1,24 @@
 #[macro_use]
 extern crate lazy_static;
+use actix_identity::{Identity, IdentityMiddleware};
+use actix_session::{storage::CookieSessionStore, Session, SessionMiddleware};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+
 use sqids::Sqids;
-use std::str::FromStr;
+use std::{env, str::FromStr};
 use tera::Tera;
 
 use actix_files::{Files, NamedFile};
 use actix_web::{
+    cookie::Key,
     get,
     http::{Method, StatusCode},
     middleware, post,
     web::{self, Data},
-    App, Either, HttpResponse, HttpServer, Responder,
+    App, Either, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -46,6 +50,14 @@ lazy_static! {
       //  tera.register_filter("do_nothing", do_nothing_filter);
         tera
     };
+}
+
+fn get_session_key() -> Key {
+    let key_str = env::var("SESSION_KEY").unwrap_or_else(|_| {
+        log::error!("FATAL: SESSION_KEY environment variable not set");
+        std::process::exit(1);
+    });
+    Key::from(key_str.as_bytes())
 }
 
 #[actix_web::main]
@@ -82,6 +94,11 @@ async fn main() -> std::io::Result<()> {
         App::new()
             // enable automatic response compression - usually register this first
             .wrap(middleware::Compress::default())
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(
+                CookieSessionStore::default(),
+                get_session_key(),
+            ))
             // enable logger - always register Actix Web Logger middleware last
             .wrap(middleware::Logger::default())
             .service(Files::new("/static", "static").show_files_listing())
@@ -161,6 +178,7 @@ struct Tenants {
 async fn login_form_handler(
     web::Form(form): web::Form<Login>,
     state: Data<AppState>,
+    request: HttpRequest,
 ) -> Result<impl Responder, AppError> {
     // validate the form data, valid email and password
     if form.email.is_empty() || form.password.is_empty() {
