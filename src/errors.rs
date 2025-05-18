@@ -39,6 +39,9 @@ pub enum AppError {
 
     #[error("Tera template error: {0}")]
     TemplateError(#[from] tera::Error),
+
+    #[error("Session error: {0}")]
+    SessionError(actix_session::SessionInsertError),
 }
 
 impl ResponseError for AppError {
@@ -56,6 +59,7 @@ impl ResponseError for AppError {
             AppError::UnknownError => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::PasswordError(_) => StatusCode::BAD_REQUEST,
             AppError::TemplateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::SessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
