@@ -2,10 +2,6 @@
 extern crate lazy_static;
 use actix_identity::{Identity, IdentityMiddleware};
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
-    Argon2,
-};
 use db::{create_tenant, create_user};
 
 use std::{env, str::FromStr};
@@ -106,6 +102,7 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/static", "static").show_files_listing())
             .service(favicon_handler)
             .service(index_handler)
+            .service(dashboard_handler)
             .service(register_handler)
             .service(register_form_handler)
             .service(login_handler)
@@ -362,4 +359,26 @@ async fn default_handler(req_method: Method) -> Result<impl Responder, std::io::
         }
         _ => Ok(Either::Right(HttpResponse::MethodNotAllowed().finish())),
     }
+}
+
+#[get("/dashboard")]
+async fn dashboard_handler(identity: Option<Identity>) -> Result<impl Responder, AppError> {
+    // Check if the user is logged in
+    if identity.is_none() {
+        return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
+    }
+
+    let mut context = Context::new();
+
+    context.insert("title", "Dashboard");
+    context.insert("description", "This is the dashboard page");
+
+    let rendered = TEMPLATES.render("dashboard.html", &context).map_err(|e| {
+        log::error!("Failed to render template: {}", e);
+        AppError::TemplateError(e)
+    })?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(rendered))
 }
