@@ -1,15 +1,17 @@
 #[macro_use]
 extern crate lazy_static;
 use actix_identity::{Identity, IdentityMiddleware};
-use actix_session::{storage::CookieSessionStore, Session, SessionMiddleware};
+use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
 };
+use db::{create_tenant, create_user};
 
-use sqids::Sqids;
 use std::{env, str::FromStr};
 use tera::Tera;
+use utils::verify_password;
+mod utils;
 
 use actix_files::{Files, NamedFile};
 use actix_web::{
@@ -18,7 +20,7 @@ use actix_web::{
     http::{Method, StatusCode},
     middleware, post,
     web::{self, Data},
-    App, Either, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, Either, HttpMessage, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -120,7 +122,10 @@ async fn main() -> std::io::Result<()> {
 }
 /// index handler
 #[get("/")]
-async fn index_handler(state: web::Data<AppState>) -> Result<impl Responder, AppError> {
+async fn index_handler(
+    state: web::Data<AppState>,
+    identity: Option<Identity>,
+) -> Result<impl Responder, AppError> {
     let users = db::get_all_users(&state).await.map_err(|e| {
         log::error!("Failed to get users: {}", e);
         AppError::DatabaseError(e)
@@ -131,12 +136,19 @@ async fn index_handler(state: web::Data<AppState>) -> Result<impl Responder, App
         AppError::DatabaseError(e)
     })?;
 
+    let id = match identity.map(|id| id.id()) {
+        None => "anonymous".to_owned(),
+        Some(Ok(id)) => id,
+        Some(Err(err)) => return Err(AppError::IdentityError(err)),
+    };
+
     let mut context = Context::new();
     context.insert("title", "Welcome to the index page");
     context.insert("description", "This is the index page");
     context.insert("users", &users);
     context.insert("tenants", &tenants);
     context.insert("version", env!("CARGO_PKG_VERSION"));
+    context.insert("identity", &id);
 
     let rendered = TEMPLATES.render("home.html", &context).map_err(|e| {
         log::error!("Failed to render template: {}", e);
@@ -156,9 +168,8 @@ struct Login {
 
 #[derive(Deserialize, Serialize, Debug, Clone, FromRow)]
 struct User {
-    id: Option<i64>,
-    tenant_id: Option<i64>,
-    public_id: String,
+    id: i64,
+    tenant_id: i64,
     created_at: String,
     updated_at: String,
     email: String,
@@ -169,12 +180,11 @@ struct User {
 struct Tenants {
     id: i64,
     name: String,
-    public_id: String,
     created_at: String,
     updated_at: String,
 }
 
-#[post("/login_form")]
+#[post("/login")]
 async fn login_form_handler(
     web::Form(form): web::Form<Login>,
     state: Data<AppState>,
@@ -202,34 +212,36 @@ async fn login_form_handler(
         AppError::DatabaseConnectionError(e)
     })?;
 
-    let user = sqlx::query_as!(
+    let row = sqlx::query_as!(
         User,
-        "SELECT id, tenant_id, public_id, created_at, updated_at, email, pwd_hash FROM users WHERE email = ? LIMIT 1",
+        r#"
+        SELECT id, tenant_id, created_at, updated_at, email, pwd_hash
+        FROM users
+        WHERE email = ?
+        "#,
         lc_email
     )
     .fetch_optional(&mut *conn)
-    .await
-    .unwrap();
+    .await;
 
-    let user = user.unwrap();
+    match row {
+        Ok(Some(user_record)) => {
+            // Compare stored hash with provided password (example shown below)
+            if verify_password(&form.password, &user_record.pwd_hash) {
+                // Create (remember) an identity session for the authenticated user
+                Identity::login(&request.extensions(), user_record.id.to_string()).unwrap();
 
-    // Compare the form.password with the hashed password in the database
-    let parsed_hash = PasswordHash::new(&user.pwd_hash).map_err(|e| {
-        log::error!("Password hash parsing failed: {}", e);
-        AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string()))
-    })?;
-    let argon2 = Argon2::default();
-    if argon2
-        .verify_password(form.password.as_bytes(), &parsed_hash)
-        .is_err()
-    {
-        return Ok(HttpResponse::BadRequest().body("Invalid password"));
+                return Ok(HttpResponse::Ok().body("Login successful"));
+            } else {
+                return Ok(HttpResponse::Unauthorized().body("Invalid credentials"));
+            }
+        }
+        Ok(None) => Ok(HttpResponse::Unauthorized().body("User does not exist")),
+        Err(e) => {
+            eprintln!("Database error: {:?}", e);
+            Ok(HttpResponse::InternalServerError().body("Database error"))
+        }
     }
-
-    // If login is successful, redirect or respond accordingly
-    Ok(HttpResponse::SeeOther()
-        .append_header(("Location", "/"))
-        .body("Login successful"))
 }
 
 #[derive(Deserialize)]
@@ -240,10 +252,11 @@ struct Register {
     tenant: String,
 }
 /// Register Form handler
-#[post("/register_form")]
+#[post("/register")]
 async fn register_form_handler(
     web::Form(form): web::Form<Register>,
     state: Data<AppState>,
+    request: HttpRequest,
 ) -> Result<impl Responder, AppError> {
     // validate the form data, valid email and repeated password and password2
     if form.email.is_empty()
@@ -281,138 +294,23 @@ async fn register_form_handler(
     let lc_email = form.email.to_lowercase();
     let lc_tenant = form.tenant.to_lowercase();
 
-    // check if email is already registered
-    let mut conn = state.db_pool.acquire().await.map_err(|e| {
-        log::error!("Failed to acquire database connection: {}", e);
-        AppError::DatabaseConnectionError(e)
-    })?;
-
-    let tenant_exists = sqlx::query!("SELECT name FROM tenants WHERE name = ? LIMIT 1", lc_tenant)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to check tenant: {}", e);
-            AppError::SqlxError(e)
-        })?
-        .is_none();
-    if !tenant_exists {
-        return Ok(HttpResponse::BadRequest().body("Tenant already registered"));
-    }
-
-    // Get count of tenants and encode it to a sqids
-    let tenant_count: u64 = sqlx::query!("SELECT COUNT(*) as count FROM tenants")
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to get tenant count: {}", e);
-            AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string()))
-        })?
-        .count
-        .try_into()
-        .map_err(|e| {
-            log::error!("Failed to convert tenant count: {}", e);
-            AppError::InternalServerError
-        })?;
-
-    // encode the tenant count to a sqids
-    let sqids = Sqids::default();
-
-    let tenant_public_id = sqids
-        .encode(&[tenant_count])
-        .map_err(|e| AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string())))?;
-
     // create tenant
-    let tenant = sqlx::query!(
-        "INSERT INTO tenants (name, created_at, updated_at, public_id) VALUES (?, datetime('now'), datetime('now'), ?)",
-        lc_tenant,
-        tenant_public_id
-    )
-    .execute(&mut *conn)
-    .await
-    .map_err(|e| {
-        log::error!("Failed to insert tenant: {}", e);
-        AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string()))
-    })?;
 
-    let unused_email = sqlx::query!("SELECT email FROM users WHERE email = ? LIMIT 1", lc_email)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to check email: {}", e);
-            AppError::SqlxError(e)
-        })?
-        .is_none();
-    if !unused_email {
-        return Ok(HttpResponse::BadRequest().body("Email already registered"));
-    }
+    let tenant = create_tenant(&state, lc_tenant).await?;
 
-    // hash the password with argon2
-    let salt = SaltString::generate(&mut OsRng);
+    let user = create_user(&state, tenant.id, lc_email, form.password).await?;
 
-    // Argon2 with default params (Argon2id v19)
-    let argon2 = Argon2::default();
+    Identity::login(&request.extensions(), user.email.into()).unwrap();
 
-    // Hash password to PHC string ($argon2id$v=19$...)
-    let hashed_password = argon2
-        .hash_password(form.password.as_bytes(), &salt)
-        .map_err(|e| {
-            log::error!("Password hashing failed: {}", e);
-            AppError::PasswordError(e.to_string())
-        })?
-        .to_string();
-    // check if the password is hashed correctly
-    let parsed_hash = PasswordHash::new(&hashed_password).map_err(|e| {
-        log::error!("Password hash parsing failed: {}", e);
-        AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string()))
-    })?;
-    assert!(Argon2::default()
-        .verify_password(form.password.as_bytes(), &parsed_hash)
-        .is_ok());
-
-    // encode the user count to a sqids
-
-    let user_count: u64 = sqlx::query!("SELECT COUNT(*) as count FROM users")
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to get user count: {}", e);
-            AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string()))
-        })?
-        .count
-        .try_into()
-        .map_err(|e| {
-            log::error!("Failed to convert user count to u64: {}", e);
-            AppError::InternalServerError
-        })?;
-
-    let public_user_id = sqids
-        .encode(&[user_count])
-        .map_err(|e| AppError::DatabaseError(sqlx::Error::InvalidArgument(e.to_string())))?;
-
-    // insert the user into the database with created_at and updated_at timestamps
-    let registered_user = sqlx::query!(
-        "INSERT INTO users (email, pwd_hash, created_at, updated_at, tenant_id, public_id)
-        SELECT ?, ?, datetime('now'), datetime('now'),?, id FROM tenants WHERE name = ?",
-        lc_email,
-        hashed_password,
-        lc_tenant,
-        public_user_id
-    )
-    .execute(&mut *conn)
-    .await
-    .map_err(|e| {
-        log::error!("Failed to insert user: {}", e);
-        AppError::DatabaseError
-    });
-
-    if registered_user.is_err() {
-        return Ok(HttpResponse::InternalServerError().body("Failed to register user"));
-    }
-
-    // redirect to the home page
     Ok(HttpResponse::SeeOther()
         .append_header(("Location", "/"))
         .body("User registered successfully"))
+}
+
+#[post("/logout")]
+async fn logout(user: Identity) -> impl Responder {
+    user.logout();
+    HttpResponse::Ok()
 }
 
 /// Register handler
