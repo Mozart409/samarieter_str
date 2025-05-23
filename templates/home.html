@@ -1,32 +1,22 @@
-{% extends "base.html" %}
-
-{% block title %}Home{% endblock %}
-
-{% block content %}
+{% extends "base.html" %} {% block title %}Home{% endblock %} {% block content
+%}
 <p>This is a simple Rust application.</p>
-
-{% for user in users %}
-<p>{{ user.name }} - {{ user.email }}</p>
-{% endfor %}
 
 {% if users %}
 <p>There are {{ users|length }} users.</p>
 {% else %}
 <p>No users found.</p>
-{% endif %}
-
-{% if tenants %}
+{% endif %} {% if tenants %}
 <p>There are {{ tenants|length }} tenants.</p>
-{% for tenant in tenants %}
-<p>{{ tenant.id }} - {{ tenant.name }}</p>
-{% endfor %}
 {% else %}
 <p>No tenants found.</p>
 {% endif %}
 
-
-
 <p>
     Version: {{ version }}
+</p>
+
+<p>
+    Identity: {{ identity }}
 </p>
 {% endblock %}

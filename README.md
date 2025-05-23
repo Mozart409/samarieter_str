@@ -3,6 +3,7 @@
 A personal finance app designed to help you take control of your money and achieve your financial goals.
 
 ## Table of Contents
+
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Installation](#installation)
@@ -11,6 +12,7 @@ A personal finance app designed to help you take control of your money and achie
 - [License](#license)
 
 ## Features
+
 - **Budgeting Tools**: Create and manage budgets to track your spending.
 - **Expense Tracking**: Record and categorize your expenses.
 - **Financial Insights**: Gain insights into your spending habits with visualizations.
@@ -18,13 +20,16 @@ A personal finance app designed to help you take control of your money and achie
 - **Secure**: Built with a focus on privacy and data security.
 
 ## Tech Stack
+
 Samarieter Str is built using:
+
 - **Frontend**: HTML, CSS
 - **Backend**: Rust
 - **Configuration and Build Management**: Nix
 - **Scripting**: Shell
 
 ## Installation
+
 To get started with Samarieter Str, follow these steps:
 
 1. Clone the repository:
@@ -51,7 +56,9 @@ To get started with Samarieter Str, follow these steps:
    ```
 
 ## Usage
+
 Once the app is running, you can:
+
 - Set up your budget categories.
 - Add and view expense records.
 - Analyze your financial data.
@@ -59,7 +66,9 @@ Once the app is running, you can:
 Feel free to modify the app according to your personal requirements.
 
 ## Contributing
+
 Contributions are welcome! If you’d like to contribute:
+
 1. Fork the repository.
 2. Create a new branch for your feature or bug fix:
    ```bash
@@ -76,8 +85,8 @@ Contributions are welcome! If you’d like to contribute:
 5. Open a pull request.
 
 ## License
-This project is licensed under MIT. See the `LICENSE` file for details.
 
+This project is licensed under MIT. See the `LICENSE` file for details.
 
 ## Generate Password
 

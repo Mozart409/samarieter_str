@@ -42,6 +42,9 @@ pub enum AppError {
 
     #[error("Session error: {0}")]
     SessionError(actix_session::SessionInsertError),
+
+    #[error("Session error: {0}")]
+    IdentityError(actix_identity::error::GetIdentityError),
 }
 
 impl ResponseError for AppError {
@@ -59,7 +62,8 @@ impl ResponseError for AppError {
             AppError::UnknownError => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::PasswordError(_) => StatusCode::BAD_REQUEST,
             AppError::TemplateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::SessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::SessionError(_) => StatusCode::UNAUTHORIZED,
+            AppError::IdentityError(_) => StatusCode::UNAUTHORIZED,
         }
     }
 
