@@ -6,7 +6,7 @@ default:
 dev:
 	cargo watch -q -c -x run
 
-fmt: clear rfmt dprint
+fix: clear rfmt dprint
 
 rfmt: 
 	cargo +nightly run fmt
