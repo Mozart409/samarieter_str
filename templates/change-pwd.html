@@ -1,22 +1,21 @@
-{% extends "base.html" %} {% block title %}Register{% endblock %} {% block
+{% extends "base.html" %} {% block title %}Change your password{% endblock %} {% block
 content %}
 
 <div>
-  <form action="/register" method="POST">
-    <label>Email <br />
-      <input type="text" id="email" name="email" required />
+  <form action="/change-pwd" method="POST">
+    <label>Old Password <br />
+      <input type="password" id="old_password" name="old_password" required />
     </label>
+
     <label>Password (at least 12 characters long)<br />
       <input type="password" id="password" name="password" required />
     </label>
     <label>Repeat password<br />
       <input type="password" id="password2" name="password2" required />
     </label>
-    <label>Tenant<br />
-      <input type="text" id="tenant" name="tenant" required />
-    </label>
+
     <p id="errors" style="color: red; font-style: italic"></p>
-    <button type="submit">Register</button>
+    <button type="submit">Change password</button>
   </form>
 </div>
 
@@ -25,28 +24,13 @@ content %}
   const password = document.getElementById("password");
   const password2 = document.getElementById("password2");
   const errors = document.getElementById("errors");
-  const email = document.getElementById("email");
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+
 
   const form = document.querySelector("form");
   form.addEventListener("submit", (e) => {
     errors.innerText = "";
-    if (!emailRegex.test(email.value)) {
-      e.preventDefault();
-      errors.innerText = "Invalid email address";
-      email.value = "";
-      email.focus();
-    } else if (email.value.length < 5) {
-      e.preventDefault();
-      errors.innerText = "Email must be at least 5 characters long";
-      email.value = "";
-      email.focus();
-    } else if (email.value.length > 128) {
-      e.preventDefault();
-      errors.innerText = "Email must be at most 128 characters long";
-      email.value = "";
-      email.focus();
-    }
+
     if (password.value.length < 12) {
       e.preventDefault();
       errors.innerText = "Password must be at least 12 characters long";

@@ -1,5 +1,6 @@
 use actix_identity::Identity;
 use db::{create_tenant, create_user};
+use serde_json::to_string;
 
 use std::env;
 use utils::verify_password;
@@ -7,7 +8,8 @@ use utils::verify_password;
 use actix_files::NamedFile;
 use actix_web::{
     get, post,
-    web::{self, Data}, HttpMessage, HttpRequest, HttpResponse, Responder,
+    web::{self, Data},
+    HttpMessage, HttpRequest, HttpResponse, Responder,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
@@ -123,13 +125,16 @@ pub async fn login_form_handler(
     match row {
         Ok(Some(user_record)) => {
             // Compare stored hash with provided password (example shown below)
-            if verify_password(&form.password, &user_record.pwd_hash) {
-                // Create (remember) an identity session for the authenticated user
-                Identity::login(&request.extensions(), user_record.id.to_string()).unwrap();
+            match verify_password(&form.password, &user_record.pwd_hash) {
+                Ok(true) => {
+                    // Create (remember) an identity session for the authenticated user
+                    Identity::login(&request.extensions(), user_record.id.to_string()).unwrap();
 
-                return Ok(HttpResponse::Ok().body("Login successful"));
-            } else {
-                return Ok(HttpResponse::Unauthorized().body("Invalid credentials"));
+                    return Ok(HttpResponse::Ok().body("Login successful"));
+                }
+                Ok(false) | Err(_) => {
+                    return Ok(HttpResponse::Unauthorized().body("Invalid credentials"));
+                }
             }
         }
         Ok(None) => Ok(HttpResponse::Unauthorized().body("User does not exist")),
@@ -204,7 +209,7 @@ pub async fn register_form_handler(
 }
 
 #[post("/logout")]
-pub async fn logout(user: Identity) -> impl Responder {
+pub async fn logout_handler(user: Identity) -> impl Responder {
     user.logout();
     HttpResponse::Ok()
 }
@@ -268,4 +273,118 @@ pub async fn dashboard_handler(identity: Option<Identity>) -> Result<impl Respon
     Ok(HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(rendered))
+}
+
+#[get("/change-pwd")]
+pub async fn change_pwd_handler(identity: Option<Identity>) -> Result<impl Responder, AppError> {
+    // Check if the user is logged in
+    if identity.is_none() {
+        // Redirect to login page or return unauthorized response
+        return Ok(HttpResponse::SeeOther()
+            .append_header(("Location", "/login"))
+            .body("Redirecting to login page"));
+
+        // return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
+    }
+
+    let mut context = Context::new();
+
+    context.insert("title", "Change Password");
+    context.insert("description", "This is the change password page");
+
+    let rendered = TEMPLATES.render("change-pwd.html", &context).map_err(|e| {
+        log::error!("Failed to render template: {}", e);
+        AppError::TemplateError(e)
+    })?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(rendered))
+}
+
+#[derive(Deserialize)]
+pub struct ChangePwdForm {
+    old_password: String,
+    password: String,
+    password2: String,
+}
+
+#[post("/change-pwd")]
+pub async fn change_pwd_form_handler(
+    web::Form(form): web::Form<ChangePwdForm>,
+    state: Data<AppState>,
+    identity: Option<Identity>,
+) -> Result<impl Responder, AppError> {
+    // Check if the user is logged in
+    if identity.is_none() {
+        return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
+    }
+
+    // Validate the form data
+    if form.old_password.is_empty() || form.password.is_empty() || form.password2.is_empty() {
+        return Ok(HttpResponse::BadRequest().body("All fields are required"));
+    }
+    if form.password != form.password2 {
+        return Ok(HttpResponse::BadRequest().body("Passwords do not match"));
+    }
+    if form.password.len() < 12 {
+        return Ok(HttpResponse::BadRequest().body("Password must be at least 12 characters long"));
+    }
+    if form.password.len() > 128 {
+        return Ok(HttpResponse::BadRequest().body("Password must be at most 128 characters long"));
+    }
+
+    let user_id = identity
+        .unwrap()
+        .id()
+        .map_err(|e| AppError::IdentityError(e))?;
+
+    // Fetch the user from the database
+    let mut conn = state.db_pool.acquire().await.map_err(|e| {
+        log::error!("Failed to acquire database connection: {}", e);
+        AppError::DatabaseConnectionError(e)
+    })?;
+    let user = sqlx::query_as!(
+        User,
+        r#"
+        SELECT id, tenant_id, created_at, updated_at, email, pwd_hash
+        FROM users
+        WHERE id = ?
+        "#,
+        user_id
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch user: {}", e);
+        AppError::DatabaseError(e)
+    })?;
+    // Verify the old password
+    if let Err(e) = utils::verify_password(&form.old_password, &user.pwd_hash) {
+        log::warn!("Old password verification failed for user ID: {}", user.id);
+        return Ok(HttpResponse::Unauthorized().body("Old password is incorrect"));
+    };
+    // Hash the new password
+    let new_pwd_hash = utils::hash_password(&form.password).map_err(|e| {
+        log::error!("Failed to hash new password: {}", e);
+        AppError::PasswordError(e.to_string())
+    })?;
+    // Update the user's password in the database
+    db::update_user(
+        &state,
+        user.id,
+        None, // No change to email
+        Some(new_pwd_hash),
+    )
+    .await
+    .map_err(|e| {
+        log::error!("Failed to update user password: {}", e);
+        AppError::PasswordError(e.to_string())
+    })?;
+    // If everything is successful, redirect to the dashboard
+    log::info!("Password changed successfully for user ID: {}", user.id);
+
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", "/dashboard"))
+        .body("Password changed successfully"))
 }

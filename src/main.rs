@@ -101,6 +101,8 @@ async fn main() -> std::io::Result<()> {
             .service(routes::register_form_handler)
             .service(routes::login_handler)
             .service(routes::login_form_handler)
+            .service(routes::logout_handler)
+            .service(routes::change_pwd_handler)
             .app_data(Data::new(AppState {
                 db_pool: db_pool.clone(),
             }))
