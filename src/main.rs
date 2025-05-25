@@ -12,11 +12,10 @@ mod utils;
 use actix_files::{Files, NamedFile};
 use actix_web::{
     cookie::Key,
-    get,
     http::{Method, StatusCode},
-    middleware, post,
+    middleware,
     web::{self, Data},
-    App, Either, HttpMessage, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, Either, HttpResponse, HttpServer, Responder,
 };
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -27,11 +26,12 @@ use sqlx::{
 };
 mod db;
 mod errors;
+mod routes;
 use errors::AppError;
 use tera::Context;
 
 #[derive(Debug, Clone)]
-struct AppState {
+pub struct AppState {
     db_pool: SqlitePool,
 }
 
@@ -100,13 +100,13 @@ async fn main() -> std::io::Result<()> {
             // enable logger - always register Actix Web Logger middleware last
             .wrap(middleware::Logger::default())
             .service(Files::new("/static", "static").show_files_listing())
-            .service(favicon_handler)
-            .service(index_handler)
-            .service(dashboard_handler)
-            .service(register_handler)
-            .service(register_form_handler)
-            .service(login_handler)
-            .service(login_form_handler)
+            .service(routes::favicon_handler)
+            .service(routes::index_handler)
+            .service(routes::dashboard_handler)
+            .service(routes::register_handler)
+            .service(routes::register_form_handler)
+            .service(routes::login_handler)
+            .service(routes::login_form_handler)
             .app_data(Data::new(AppState {
                 db_pool: db_pool.clone(),
             }))
@@ -118,236 +118,6 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 /// index handler
-#[get("/")]
-async fn index_handler(
-    state: web::Data<AppState>,
-    identity: Option<Identity>,
-) -> Result<impl Responder, AppError> {
-    let users = db::get_all_users(&state).await.map_err(|e| {
-        log::error!("Failed to get users: {}", e);
-        AppError::DatabaseError(e)
-    })?;
-
-    let tenants = db::get_all_tenants(&state).await.map_err(|e| {
-        log::error!("Failed to get tenants: {}", e);
-        AppError::DatabaseError(e)
-    })?;
-
-    let id = match identity.map(|id| id.id()) {
-        None => "anonymous".to_owned(),
-        Some(Ok(id)) => id,
-        Some(Err(err)) => return Err(AppError::IdentityError(err)),
-    };
-
-    let mut context = Context::new();
-    context.insert("title", "Welcome to the index page");
-    context.insert("description", "This is the index page");
-    context.insert("users", &users);
-    context.insert("tenants", &tenants);
-    context.insert("version", env!("CARGO_PKG_VERSION"));
-    context.insert("identity", &id);
-
-    let rendered = TEMPLATES.render("home.html", &context).map_err(|e| {
-        log::error!("Failed to render template: {}", e);
-        AppError::TemplateError(e)
-    })?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(rendered))
-}
-
-#[derive(Deserialize)]
-struct Login {
-    email: String,
-    password: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, FromRow)]
-struct User {
-    id: i64,
-    tenant_id: i64,
-    created_at: String,
-    updated_at: String,
-    email: String,
-    pwd_hash: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, FromRow)]
-struct Tenants {
-    id: i64,
-    name: String,
-    created_at: String,
-    updated_at: String,
-}
-
-#[post("/login")]
-async fn login_form_handler(
-    web::Form(form): web::Form<Login>,
-    state: Data<AppState>,
-    request: HttpRequest,
-) -> Result<impl Responder, AppError> {
-    // validate the form data, valid email and password
-    if form.email.is_empty() || form.password.is_empty() {
-        return Ok(HttpResponse::BadRequest().body("All fields are required"));
-    }
-    if !form.email.contains('@') {
-        return Ok(HttpResponse::BadRequest().body("Invalid email address"));
-    }
-    if form.password.len() < 12 {
-        return Ok(HttpResponse::BadRequest().body("Password must be at least 12 characters long"));
-    }
-    if form.password.len() > 128 {
-        return Ok(HttpResponse::BadRequest().body("Password must be at most 128 characters long"));
-    }
-    // lowercase form.email
-    let lc_email = form.email.to_lowercase();
-
-    // check if email is already registered
-    let mut conn = state.db_pool.acquire().await.map_err(|e| {
-        log::error!("Failed to acquire database connection: {}", e);
-        AppError::DatabaseConnectionError(e)
-    })?;
-
-    let row = sqlx::query_as!(
-        User,
-        r#"
-        SELECT id, tenant_id, created_at, updated_at, email, pwd_hash
-        FROM users
-        WHERE email = ?
-        "#,
-        lc_email
-    )
-    .fetch_optional(&mut *conn)
-    .await;
-
-    match row {
-        Ok(Some(user_record)) => {
-            // Compare stored hash with provided password (example shown below)
-            if verify_password(&form.password, &user_record.pwd_hash) {
-                // Create (remember) an identity session for the authenticated user
-                Identity::login(&request.extensions(), user_record.id.to_string()).unwrap();
-
-                return Ok(HttpResponse::Ok().body("Login successful"));
-            } else {
-                return Ok(HttpResponse::Unauthorized().body("Invalid credentials"));
-            }
-        }
-        Ok(None) => Ok(HttpResponse::Unauthorized().body("User does not exist")),
-        Err(e) => {
-            eprintln!("Database error: {:?}", e);
-            Ok(HttpResponse::InternalServerError().body("Database error"))
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct Register {
-    email: String,
-    password: String,
-    password2: String,
-    tenant: String,
-}
-/// Register Form handler
-#[post("/register")]
-async fn register_form_handler(
-    web::Form(form): web::Form<Register>,
-    state: Data<AppState>,
-    request: HttpRequest,
-) -> Result<impl Responder, AppError> {
-    // validate the form data, valid email and repeated password and password2
-    if form.email.is_empty()
-        || form.password.is_empty()
-        || form.password2.is_empty()
-        || form.tenant.is_empty()
-    {
-        return Ok(HttpResponse::BadRequest().body("All fields are required"));
-    }
-    if form.password != form.password2 {
-        return Ok(HttpResponse::BadRequest().body("Passwords do not match"));
-    }
-    if !form.email.contains('@') {
-        return Ok(HttpResponse::BadRequest().body("Invalid email address"));
-    }
-    if form.password.len() < 12 {
-        return Ok(HttpResponse::BadRequest().body("Password must be at least 12 characters long"));
-    }
-    if form.password.len() > 128 {
-        return Ok(HttpResponse::BadRequest().body("Password must be at most 128 characters long"));
-    }
-    // check if password is strong numbers, letters, special characters
-    if !form.password.chars().any(|c| c.is_digit(10))
-        || !form.password.chars().any(|c| c.is_alphabetic())
-        || !form
-            .password
-            .chars()
-            .any(|c| "!@#$%^&*()_+-=[]{}|;':\",.<>?/".contains(c))
-    {
-        return Ok(HttpResponse::BadRequest().body(
-            "Password must contain at least one number, one letter and one special character",
-        ));
-    }
-    // lowercase form.tenant and form.email
-    let lc_email = form.email.to_lowercase();
-    let lc_tenant = form.tenant.to_lowercase();
-
-    // create tenant
-
-    let tenant = create_tenant(&state, lc_tenant).await?;
-
-    let user = create_user(&state, tenant.id, lc_email, form.password).await?;
-
-    Identity::login(&request.extensions(), user.email.into()).unwrap();
-
-    Ok(HttpResponse::SeeOther()
-        .append_header(("Location", "/"))
-        .body("User registered successfully"))
-}
-
-#[post("/logout")]
-async fn logout(user: Identity) -> impl Responder {
-    user.logout();
-    HttpResponse::Ok()
-}
-
-/// Register handler
-#[get("/register")]
-async fn register_handler() -> Result<impl Responder, AppError> {
-    let mut context = Context::new();
-    context.insert("title", "Register");
-    context.insert("description", "This is the register page");
-
-    let rendered = TEMPLATES.render("register.html", &context).map_err(|e| {
-        log::error!("Failed to render template: {}", e);
-        AppError::TemplateError(e)
-    })?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(rendered))
-}
-
-/// Register handler
-#[get("/login")]
-async fn login_handler() -> Result<impl Responder, AppError> {
-    let mut context = Context::new();
-    context.insert("title", "Welcome to the login page");
-    context.insert("description", "This is the login page");
-
-    let rendered = TEMPLATES.render("login.html", &context).map_err(|e| {
-        log::error!("Failed to render template: {}", e);
-        AppError::TemplateError(e)
-    })?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(rendered))
-}
-/// favicon handler
-#[get("/favicon")]
-async fn favicon_handler() -> Result<impl Responder, AppError> {
-    Ok(NamedFile::open("static/favicon.ico")?)
-}
 
 async fn default_handler(req_method: Method) -> Result<impl Responder, std::io::Error> {
     match req_method {
@@ -359,26 +129,4 @@ async fn default_handler(req_method: Method) -> Result<impl Responder, std::io::
         }
         _ => Ok(Either::Right(HttpResponse::MethodNotAllowed().finish())),
     }
-}
-
-#[get("/dashboard")]
-async fn dashboard_handler(identity: Option<Identity>) -> Result<impl Responder, AppError> {
-    // Check if the user is logged in
-    if identity.is_none() {
-        return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
-    }
-
-    let mut context = Context::new();
-
-    context.insert("title", "Dashboard");
-    context.insert("description", "This is the dashboard page");
-
-    let rendered = TEMPLATES.render("dashboard.html", &context).map_err(|e| {
-        log::error!("Failed to render template: {}", e);
-        AppError::TemplateError(e)
-    })?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(rendered))
 }

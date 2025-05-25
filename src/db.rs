@@ -3,7 +3,11 @@ use argon2::{
     Argon2,
 };
 
-use crate::{errors::AppError, AppState, Tenants, User};
+use crate::{
+    errors::AppError,
+    routes::{Tenants, User},
+    AppState,
+};
 
 pub async fn get_all_users(state: &AppState) -> Result<Vec<User>, sqlx::Error> {
     let pool = state.db_pool.clone();
