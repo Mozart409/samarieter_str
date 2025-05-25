@@ -1,27 +1,16 @@
-use actix_identity::{Identity, IdentityMiddleware};
-use actix_session::{storage::CookieSessionStore, SessionMiddleware};
+use actix_identity::Identity;
 use db::{create_tenant, create_user};
 
-use std::{env, str::FromStr};
-use tera::Tera;
+use std::env;
 use utils::verify_password;
 
-use actix_files::{Files, NamedFile};
+use actix_files::NamedFile;
 use actix_web::{
-    cookie::Key,
-    get,
-    http::{Method, StatusCode},
-    middleware, post,
-    web::{self, Data},
-    App, Either, HttpMessage, HttpRequest, HttpResponse, HttpServer, Responder,
+    get, post,
+    web::{self, Data}, HttpMessage, HttpRequest, HttpResponse, Responder,
 };
-use log::info;
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    prelude::FromRow,
-    sqlite::{SqliteConnectOptions, SqliteJournalMode},
-    SqlitePool,
-};
+use sqlx::prelude::FromRow;
 
 use errors::AppError;
 use tera::Context;

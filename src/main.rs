@@ -1,12 +1,10 @@
 #[macro_use]
 extern crate lazy_static;
-use actix_identity::{Identity, IdentityMiddleware};
+use actix_identity::IdentityMiddleware;
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
-use db::{create_tenant, create_user};
 
 use std::{env, str::FromStr};
 use tera::Tera;
-use utils::verify_password;
 mod utils;
 
 use actix_files::{Files, NamedFile};
@@ -18,17 +16,13 @@ use actix_web::{
     App, Either, HttpResponse, HttpServer, Responder,
 };
 use log::info;
-use serde::{Deserialize, Serialize};
 use sqlx::{
-    prelude::FromRow,
     sqlite::{SqliteConnectOptions, SqliteJournalMode},
     SqlitePool,
 };
 mod db;
 mod errors;
 mod routes;
-use errors::AppError;
-use tera::Context;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
