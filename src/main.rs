@@ -64,7 +64,7 @@ async fn main() -> std::io::Result<()> {
     // })?;
     //
 
-    let database_url = format!("sqlite://samarieter_str.db");
+    let database_url = "sqlite://samarieter_str.db".to_string();
 
     let opts = SqliteConnectOptions::from_str(&database_url)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?

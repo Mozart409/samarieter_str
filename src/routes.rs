@@ -1,6 +1,5 @@
 use actix_identity::Identity;
 use db::{create_tenant, create_user};
-use serde_json::to_string;
 
 use std::env;
 use utils::verify_password;
@@ -11,8 +10,7 @@ use actix_web::{
     web::{self, Data},
     HttpMessage, HttpRequest, HttpResponse, Responder,
 };
-use serde::{Deserialize, Serialize};
-use sqlx::prelude::FromRow;
+use serde::Deserialize;
 
 use errors::AppError;
 use tera::Context;
@@ -116,11 +114,9 @@ pub async fn login_form_handler(
                     // Create (remember) an identity session for the authenticated user
                     Identity::login(&request.extensions(), user_record.id.to_string()).unwrap();
 
-                    return Ok(HttpResponse::Ok().body("Login successful"));
+                    Ok(HttpResponse::Ok().body("Login successful"))
                 }
-                Ok(false) | Err(_) => {
-                    return Ok(HttpResponse::Unauthorized().body("Invalid credentials"));
-                }
+                Ok(false) | Err(_) => Ok(HttpResponse::Unauthorized().body("Invalid credentials")),
             }
         }
         Ok(None) => Ok(HttpResponse::Unauthorized().body("User does not exist")),
@@ -166,7 +162,7 @@ pub async fn register_form_handler(
         return Ok(HttpResponse::BadRequest().body("Password must be at most 128 characters long"));
     }
     // check if password is strong numbers, letters, special characters
-    if !form.password.chars().any(|c| c.is_digit(10))
+    if !form.password.chars().any(|c| c.is_ascii_digit())
         || !form.password.chars().any(|c| c.is_alphabetic())
         || !form
             .password
@@ -187,7 +183,7 @@ pub async fn register_form_handler(
 
     let user = create_user(&state, tenant.id, lc_email, form.password).await?;
 
-    Identity::login(&request.extensions(), user.email.into()).unwrap();
+    Identity::login(&request.extensions(), user.email).unwrap();
 
     Ok(HttpResponse::SeeOther()
         .append_header(("Location", "/"))
@@ -197,9 +193,9 @@ pub async fn register_form_handler(
 #[post("/logout")]
 pub async fn logout_handler(user: Identity) -> impl Responder {
     user.logout();
-    return HttpResponse::SeeOther()
+    HttpResponse::SeeOther()
         .append_header(("Location", "/"))
-        .body("Redirecting to home page");
+        .body("Redirecting to home page")
 }
 
 /// Register handler
@@ -343,10 +339,7 @@ pub async fn change_pwd_form_handler(
         return Ok(HttpResponse::BadRequest().body("Password must be at most 128 characters long"));
     }
 
-    let user_id = identity
-        .unwrap()
-        .id()
-        .map_err(|e| AppError::IdentityError(e))?;
+    let user_id = identity.unwrap().id().map_err(AppError::IdentityError)?;
 
     // Fetch the user from the database
     let mut conn = state.db_pool.acquire().await.map_err(|e| {
@@ -370,7 +363,11 @@ pub async fn change_pwd_form_handler(
     })?;
     // Verify the old password
     if let Err(e) = utils::verify_password(&form.old_password, &user.pwd_hash) {
-        log::warn!("Old password verification failed for user ID: {}", user.id);
+        log::warn!(
+            "Old password verification failed for user ID: {} {}",
+            user.id,
+            e
+        );
         return Ok(HttpResponse::Unauthorized().body("Old password is incorrect"));
     };
     // Hash the new password
@@ -419,10 +416,7 @@ pub async fn create_item_handler(
         return Ok(HttpResponse::BadRequest().body("Invalid item data"));
     }
 
-    let user_email = identity
-        .unwrap()
-        .id()
-        .map_err(|e| AppError::IdentityError(e))?;
+    let user_email = identity.unwrap().id().map_err(AppError::IdentityError)?;
 
     log::info!("Creating item for user ID: {}", user_email);
 
@@ -447,13 +441,13 @@ pub async fn create_item_handler(
         AppError::DatabaseError(e)
     })?;
 
-    let item = db::create_item(&state, tenant.id, form.name.clone(), form.amount)
+    db::create_item(&state, tenant.id, form.name.clone(), form.amount)
         .await
         .map_err(|e| {
             log::error!("Failed to create item: {}", e);
             AppError::DatabaseError(e)
         })?;
-    log::info!("Item created successfully: {:?}", item);
+    log::info!("Item created successfully: {:?}", ());
     Ok(HttpResponse::SeeOther()
         .append_header(("Location", "/dashboard"))
         .body("Item created successfully"))

@@ -38,7 +38,7 @@ pub async fn get_user_by_email(state: &AppState, email: String) -> Result<User, 
     }
 }
 
-pub async fn get_user_by_id(state: &AppState, id: i64) -> Result<User, sqlx::Error> {
+pub async fn _get_user_by_id(state: &AppState, id: i64) -> Result<User, sqlx::Error> {
     let pool = state.db_pool.clone();
     let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(id)
@@ -77,7 +77,7 @@ pub async fn create_user(
         .bind(pwd_hash)
         .fetch_one(&pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))?;
+        .map_err(AppError::DatabaseError)?;
     log::info!("User created: {:?}", user);
     Ok(user)
 }
@@ -158,12 +158,9 @@ pub async fn update_user(
     if let Some(pwd_hash) = &pwd_hash_val {
         q = q.bind(pwd_hash);
     }
-    q = q.bind(&id);
+    q = q.bind(id);
 
-    let user = q
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e))?;
+    let user = q.fetch_one(&pool).await.map_err(AppError::DatabaseError)?;
 
     log::info!("User updated: {:?}", user);
     Ok(user)
