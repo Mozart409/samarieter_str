@@ -117,7 +117,6 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
-/// index handler
 
 async fn default_handler(req_method: Method) -> Result<impl Responder, std::io::Error> {
     match req_method {
