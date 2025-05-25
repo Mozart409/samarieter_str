@@ -11,7 +11,7 @@ fix: clear rfmt dprint
 rfmt: 
 	cargo +nightly run fmt
 
-dprint:
+dprint: clear
 	dprint fmt
 
 clear:
