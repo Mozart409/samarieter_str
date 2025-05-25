@@ -14,5 +14,8 @@ rfmt:
 dprint: clear
 	dprint fmt
 
+lint: clear
+	cargo clippy --fix
+
 clear:
 	clear
