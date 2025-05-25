@@ -1,5 +1,5 @@
-{% extends "base.html" %} {% block title %}Change your password{% endblock %} {% block
-content %}
+{% extends "base.html" %} {% block title %}Change your password{% endblock %} {%
+block content %}
 
 <div>
   <form action="/change-pwd" method="POST">
@@ -20,66 +20,64 @@ content %}
 </div>
 
 <script>
-  // check if password and password 2 are the same
-  const password = document.getElementById("password");
-  const password2 = document.getElementById("password2");
-  const errors = document.getElementById("errors");
+// check if password and password 2 are the same
+const password = document.getElementById("password");
+const password2 = document.getElementById("password2");
+const errors = document.getElementById("errors");
 
+const form = document.querySelector("form");
+form.addEventListener("submit", (e) => {
+  errors.innerText = "";
 
-
-  const form = document.querySelector("form");
-  form.addEventListener("submit", (e) => {
-    errors.innerText = "";
-
-    if (password.value.length < 12) {
-      e.preventDefault();
-      errors.innerText = "Password must be at least 12 characters long";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    } else if (password.value.length > 128) {
-      e.preventDefault();
-      errors.innerText = "Password must be at most 128 characters long";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    } else if (!/[!@#$%^&*(),.?":{}|<>]/.test(password.value)) {
-      e.preventDefault();
-      errors.innerText = "Password must contain at least one special character";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    } else if (!/[A-Z]/.test(password.value)) {
-      e.preventDefault();
-      errors.innerText = "Password must contain at least one uppercase letter";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    } else if (!/[a-z]/.test(password.value)) {
-      e.preventDefault();
-      errors.innerText = "Password must contain at least one lowercase letter";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    } else if (!/[0-9]/.test(password.value)) {
-      e.preventDefault();
-      errors.innerText = "Password must contain at least one number";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    } else if (!/[^A-Za-z0-9]/.test(password.value)) {
-      e.preventDefault();
-      errors.innerText = "Password must contain at least one special character";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    } else if (password.value !== password2.value) {
-      e.preventDefault();
-      errors.innerText = "Passwords do not match";
-      password.value = "";
-      password2.value = "";
-      password.focus();
-    }
-  });
+  if (password.value.length < 12) {
+    e.preventDefault();
+    errors.innerText = "Password must be at least 12 characters long";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  } else if (password.value.length > 128) {
+    e.preventDefault();
+    errors.innerText = "Password must be at most 128 characters long";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  } else if (!/[!@#$%^&*(),.?":{}|<>]/.test(password.value)) {
+    e.preventDefault();
+    errors.innerText = "Password must contain at least one special character";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  } else if (!/[A-Z]/.test(password.value)) {
+    e.preventDefault();
+    errors.innerText = "Password must contain at least one uppercase letter";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  } else if (!/[a-z]/.test(password.value)) {
+    e.preventDefault();
+    errors.innerText = "Password must contain at least one lowercase letter";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  } else if (!/[0-9]/.test(password.value)) {
+    e.preventDefault();
+    errors.innerText = "Password must contain at least one number";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  } else if (!/[^A-Za-z0-9]/.test(password.value)) {
+    e.preventDefault();
+    errors.innerText = "Password must contain at least one special character";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  } else if (password.value !== password2.value) {
+    e.preventDefault();
+    errors.innerText = "Passwords do not match";
+    password.value = "";
+    password2.value = "";
+    password.focus();
+  }
+});
 </script>
 {% endblock %}
