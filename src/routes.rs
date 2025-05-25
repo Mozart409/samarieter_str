@@ -17,7 +17,11 @@ use sqlx::prelude::FromRow;
 use errors::AppError;
 use tera::Context;
 
-use crate::{db, errors, utils, AppState, TEMPLATES};
+use crate::{
+    db, errors,
+    structs::{Tenant, User},
+    utils, AppState, TEMPLATES,
+};
 
 #[get("/")]
 pub async fn index_handler(
@@ -62,24 +66,6 @@ pub async fn index_handler(
 pub struct Login {
     email: String,
     password: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, FromRow)]
-pub struct User {
-    id: i64,
-    tenant_id: i64,
-    created_at: String,
-    updated_at: String,
-    email: String,
-    pwd_hash: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, FromRow)]
-pub struct Tenants {
-    id: i64,
-    name: String,
-    created_at: String,
-    updated_at: String,
 }
 
 #[post("/login")]
@@ -211,7 +197,9 @@ pub async fn register_form_handler(
 #[post("/logout")]
 pub async fn logout_handler(user: Identity) -> impl Responder {
     user.logout();
-    HttpResponse::Ok()
+    return HttpResponse::SeeOther()
+        .append_header(("Location", "/"))
+        .body("Redirecting to home page");
 }
 
 /// Register handler
@@ -254,16 +242,37 @@ pub async fn favicon_handler() -> Result<impl Responder, AppError> {
 }
 
 #[get("/dashboard")]
-pub async fn dashboard_handler(identity: Option<Identity>) -> Result<impl Responder, AppError> {
-    // Check if the user is logged in
-    if identity.is_none() {
-        return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
-    }
+pub async fn dashboard_handler(
+    state: Data<AppState>,
+    identity: Option<Identity>,
+) -> Result<impl Responder, AppError> {
+    let id = match identity {
+        Some(id) => id,
+        None => {
+            log::warn!("Unauthorized access attempt to dashboard: No identity found.");
+            return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
+        }
+    };
+
+    let user = db::get_user_by_email(&state, id.id().unwrap())
+        .await
+        .map_err(|e| {
+            log::error!("Failed to fetch user by email: {}", e);
+            AppError::DatabaseError(e)
+        })?;
+
+    let items = db::get_all_items(&state, user.tenant_id)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to get items: {}", e);
+            AppError::DatabaseError(e)
+        })?;
 
     let mut context = Context::new();
 
     context.insert("title", "Dashboard");
     context.insert("description", "This is the dashboard page");
+    context.insert("items", &items);
 
     let rendered = TEMPLATES.render("dashboard.html", &context).map_err(|e| {
         log::error!("Failed to render template: {}", e);
@@ -387,4 +396,95 @@ pub async fn change_pwd_form_handler(
     Ok(HttpResponse::SeeOther()
         .append_header(("Location", "/dashboard"))
         .body("Password changed successfully"))
+}
+
+#[derive(Deserialize)]
+pub struct ItemForm {
+    name: String,
+    amount: String,
+}
+
+#[post("/item/create")]
+pub async fn create_item_handler(
+    state: Data<AppState>,
+    identity: Option<Identity>,
+    web::Form(form): web::Form<ItemForm>,
+) -> Result<impl Responder, AppError> {
+    if identity.is_none() {
+        return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
+    }
+
+    // Validate the form data
+    if form.name.is_empty() || form.amount.is_empty() {
+        return Ok(HttpResponse::BadRequest().body("Invalid item data"));
+    }
+
+    let user_email = identity
+        .unwrap()
+        .id()
+        .map_err(|e| AppError::IdentityError(e))?;
+
+    log::info!("Creating item for user ID: {}", user_email);
+
+    // get tenant id from user
+    let mut conn = state.db_pool.acquire().await.map_err(|e| {
+        log::error!("Failed to acquire database connection: {}", e);
+        AppError::DatabaseConnectionError(e)
+    })?;
+
+    let tenant = sqlx::query_as!(
+        Tenant,
+        r#"
+        SELECT * FROM tenants
+        WHERE id = (SELECT tenant_id FROM users WHERE email = ?)
+        "#,
+        user_email
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch tenant for user {}: {}", user_email, e);
+        AppError::DatabaseError(e)
+    })?;
+
+    let item = db::create_item(&state, tenant.id, form.name.clone(), form.amount)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to create item: {}", e);
+            AppError::DatabaseError(e)
+        })?;
+    log::info!("Item created successfully: {:?}", item);
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", "/dashboard"))
+        .body("Item created successfully"))
+}
+
+#[derive(Deserialize)]
+pub struct ItemDeleteForm {
+    item_id: i64,
+    tenant_id: i64,
+}
+
+#[post("/item/delete")]
+pub async fn delete_item_handler(
+    state: Data<AppState>,
+    identity: Option<Identity>,
+    web::Form(form): web::Form<ItemDeleteForm>,
+) -> Result<impl Responder, AppError> {
+    if identity.is_none() {
+        return Ok(HttpResponse::Unauthorized().body("Unauthorized"));
+    }
+
+    db::delete_item(&state, form.tenant_id, form.item_id)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to delete item with ID {}: {}", form.item_id, e);
+            AppError::DatabaseError(e)
+        })?;
+
+    log::info!("Item with ID {} deleted successfully", form.item_id);
+
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", "/dashboard"))
+        .body("Item deleted successfully"))
 }

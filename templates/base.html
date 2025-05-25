@@ -23,7 +23,9 @@
         <a href="/login">Login</a>
         <a href="/register">Register</a>
         <a href="/change-pwd">Change Password</a>
-        <a href="/logout">Logout</a>
+
+        <form method="post" action="/logout">
+          <button type="submit">Logout</button>
       </nav>
       <h1>{{ title }}</h1>
       {% block content %} {% endblock %}

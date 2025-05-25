@@ -1,9 +1,33 @@
 {% extends "base.html" %} {% block title %}Dashboard{% endblock %} {% block
 content %}
 
-<form method="POST" action="/item">
-  <input type="text" name="name" placeholder="Item name" required>
-  <input type="number" name="amount" placeholder="5,00" required>
-  <button type="submit">Login</button>
-</form>
+<div>
+  <p>Welcome to the dashboard!</p>
+
+  <form method="POST" action="/item/create">
+    <input type="text" name="name" placeholder="Item name" required>
+    <input type="string" name="amount" placeholder="5,43" required>
+    <button type="submit">Create entry</button>
+  </form>
+
+  {% if items %}
+  <p>There are {{ items|length }} items.</p>
+
+  {% else %}
+  <p>No items found.</p>
+  {% endif %} {% for item in items -%}
+
+  <ul>
+    <li>
+      {{ item.name }} - {{ item.amount }} in cents
+      <form method="POST" action="/item/delete" style="display: inline">
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+        <input type="hidden" name="tenant_id" value="{{ item.tenant_id }}">
+        <button type="submit">Delete</button>
+      </form>
+    </li>
+  </ul>
+  {%- endfor %}
+</div>
+
 {% endblock %}

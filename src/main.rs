@@ -23,6 +23,7 @@ use sqlx::{
 mod db;
 mod errors;
 mod routes;
+mod structs;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -103,6 +104,9 @@ async fn main() -> std::io::Result<()> {
             .service(routes::login_form_handler)
             .service(routes::logout_handler)
             .service(routes::change_pwd_handler)
+            .service(routes::change_pwd_form_handler)
+            .service(routes::create_item_handler)
+            .service(routes::delete_item_handler)
             .app_data(Data::new(AppState {
                 db_pool: db_pool.clone(),
             }))

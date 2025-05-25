@@ -45,6 +45,16 @@ pub enum AppError {
 
     #[error("Session error: {0}")]
     IdentityError(actix_identity::error::GetIdentityError),
+
+    #[error("User not found: {0}")]
+    UserNotFound(sqlx::Error),
+
+    #[error("Bad request")]
+    BadRequest(String),
+    #[error("Unauthorized")]
+    Unauthorized,
+    #[error("Forbidden")]
+    Forbidden,
 }
 
 impl ResponseError for AppError {
@@ -64,6 +74,10 @@ impl ResponseError for AppError {
             AppError::TemplateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::SessionError(_) => StatusCode::UNAUTHORIZED,
             AppError::IdentityError(_) => StatusCode::UNAUTHORIZED,
+            AppError::UserNotFound(_) => StatusCode::NOT_FOUND,
+            AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::Unauthorized => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden => StatusCode::FORBIDDEN,
         }
     }
 
